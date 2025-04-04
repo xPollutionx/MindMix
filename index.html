@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MindMix - Binaural Beat Audio Processor</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="container">
+        <h1>MindMix</h1>
+        <p class="subtitle">Transform your audio with binaural beat effects</p>
+        
+        <div class="upload-section">
+            <input type="file" id="audioInput" accept="audio/*" class="file-input">
+            <label for="audioInput" class="file-label">Choose Audio File</label>
+        </div>
+
+        <div class="frequency-section">
+            <h2>Select Frequency Range</h2>
+            <div class="frequency-buttons">
+                <button class="freq-btn" data-range="delta">Delta (1-4 Hz)</button>
+                <button class="freq-btn" data-range="theta">Theta (4-8 Hz)</button>
+                <button class="freq-btn" data-range="alpha">Alpha (8-12 Hz)</button>
+                <button class="freq-btn" data-range="beta">Beta (13-30 Hz)</button>
+            </div>
+        </div>
+
+        <div class="controls">
+            <button id="processBtn" class="process-btn" disabled>Process Audio</button>
+            <div id="status" class="status"></div>
+        </div>
+
+        <div class="info-section">
+            <h3>About Each Frequency Range</h3>
+            <ul>
+                <li><strong>Delta (1-4 Hz):</strong> Deep sleep, relaxation, and healing</li>
+                <li><strong>Theta (4-8 Hz):</strong> Meditation, creativity, and REM sleep</li>
+                <li><strong>Alpha (8-12 Hz):</strong> Relaxation, calmness, and focused states</li>
+                <li><strong>Beta (13-30 Hz):</strong> Alertness, concentration, and problem-solving</li>
+            </ul>
+        </div>
+    </div>
+    <script src="script.js"></script>
+</body>
+</html> 
