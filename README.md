@@ -37,7 +37,7 @@ MindMix works by keeping the left audio channel of your original file unchanged 
 Simply clone this repository and open `index.html` in a web browser. No server or build process required!
 
 ```bash
-git clone https://github.com/YourUsername/MindMix.git
+git clone https://github.com/xPollutionx/MindMix.git
 cd MindMix
 # Open index.html in your browser
 ```
