@@ -63,26 +63,64 @@ processBtn.addEventListener('click', async () => {
     processBtn.disabled = true;
 
     try {
+        // Get original filename from the input
+        const originalFileName = audioInput.files[0].name;
+        const fileNameWithoutExt = originalFileName.substring(0, originalFileName.lastIndexOf('.')) || originalFileName;
+        const outputFileName = `MindMix_${fileNameWithoutExt}.wav`;
+        console.log("Setting output filename to:", outputFileName); // Debug log
+        
         // Create a preview of the processed audio
         const audioElement = document.createElement('audio');
         audioElement.controls = true;
         
         // Process the audio
-        const blob = await createBinauralAudio(audioBuffer, selectedRange);
-        const url = URL.createObjectURL(blob);
+        statusDiv.textContent = 'Processing audio... (this may take a moment)';
+        const renderedBuffer = await processAudioBuffer(audioBuffer, selectedRange);
+        
+        // Convert to WAV
+        statusDiv.textContent = 'Creating downloadable file...';
+        const wavBlob = createWavFile(renderedBuffer);
+        
+        // Create object URL for preview
+        const url = URL.createObjectURL(wavBlob);
         
         // Set up audio preview
         audioElement.src = url;
         
-        // Create download link
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = 'binaural_audio.wav';
-        a.textContent = 'Download Processed Audio';
-        a.className = 'download-link';
+        // Create download button (not a link)
+        const downloadBtn = document.createElement('button');
+        downloadBtn.textContent = `Download ${outputFileName}`;
+        downloadBtn.className = 'download-btn';
+        downloadBtn.style.padding = '10px 20px';
+        downloadBtn.style.backgroundColor = '#6200ee';
+        downloadBtn.style.color = 'white';
+        downloadBtn.style.border = 'none';
+        downloadBtn.style.borderRadius = '25px';
+        downloadBtn.style.cursor = 'pointer';
+        downloadBtn.style.marginTop = '10px';
+        downloadBtn.style.display = 'block';
+        
+        // Add click handler for direct download with precise filename control
+        downloadBtn.addEventListener('click', function() {
+            const a = document.createElement('a');
+            a.style.display = 'none';
+            const downloadUrl = URL.createObjectURL(wavBlob);
+            a.href = downloadUrl;
+            a.download = outputFileName; // Critical: set filename here
+            
+            // Append, click, and remove to force download with correct name
+            document.body.appendChild(a);
+            a.click();
+            
+            // Clean up after sufficient delay
+            setTimeout(() => {
+                document.body.removeChild(a);
+                URL.revokeObjectURL(downloadUrl);
+            }, 3000);
+        });
         
         // Clear previous elements
-        const existingLink = document.querySelector('.download-link');
+        const existingLink = document.querySelector('.download-btn');
         if (existingLink) {
             existingLink.remove();
         }
@@ -92,10 +130,10 @@ processBtn.addEventListener('click', async () => {
             existingAudio.remove();
         }
         
-        // Add preview and download link
+        // Add preview and download button
         audioElement.className = 'preview-audio';
         document.querySelector('.controls').appendChild(audioElement);
-        document.querySelector('.controls').appendChild(a);
+        document.querySelector('.controls').appendChild(downloadBtn);
         
         statusDiv.textContent = 'Audio processed successfully! Preview:';
     } catch (error) {
@@ -106,8 +144,8 @@ processBtn.addEventListener('click', async () => {
     }
 });
 
-// Create binaural audio using frequency shifting
-async function createBinauralAudio(buffer, range) {
+// Process audio buffer to create binaural effect
+async function processAudioBuffer(buffer, range) {
     const rangeInfo = FREQUENCY_RANGES[range];
     const ctx = new OfflineAudioContext(2, buffer.length, buffer.sampleRate);
     
@@ -129,7 +167,6 @@ async function createBinauralAudio(buffer, range) {
     const freqDiff = (rangeInfo.min + rangeInfo.max) / 2;
     
     // Calculate semitone shift for the desired frequency difference
-    // This is an approximation, as exact Hz shifts depend on the original frequency
     const semitoneShift = freqDiff / 100; // Small shift to create binaural effect
     
     // Set up pitch shifting for right channel
@@ -144,10 +181,68 @@ async function createBinauralAudio(buffer, range) {
     
     // Start source and render
     source.start(0);
-    const renderedBuffer = await ctx.startRendering();
+    return await ctx.startRendering();
+}
+
+// Create WAV file from AudioBuffer
+function createWavFile(buffer) {
+    const numChannels = buffer.numberOfChannels;
+    const length = buffer.length * numChannels;
+    const sampleRate = buffer.sampleRate;
+    const bitsPerSample = 16; 
+    const bytesPerSample = bitsPerSample / 8;
+    const blockAlign = numChannels * bytesPerSample;
+    const byteRate = sampleRate * blockAlign;
+    const dataSize = length * bytesPerSample;
     
-    // Convert to WAV
-    return audioBufferToWav(renderedBuffer);
+    // Create the buffer for the WAV file
+    const arrayBuffer = new ArrayBuffer(44 + dataSize);
+    const view = new DataView(arrayBuffer);
+    
+    // Write the WAV container header
+    writeString(view, 0, 'RIFF');                     // RIFF identifier
+    view.setUint32(4, 36 + dataSize, true);           // File length
+    writeString(view, 8, 'WAVE');                     // WAVE identifier
+    
+    // Write the format chunk
+    writeString(view, 12, 'fmt ');                    // Format chunk identifier
+    view.setUint32(16, 16, true);                     // Format chunk length
+    view.setUint16(20, 1, true);                      // Sample format (1 for PCM)
+    view.setUint16(22, numChannels, true);            // Number of channels
+    view.setUint32(24, sampleRate, true);             // Sample rate
+    view.setUint32(28, byteRate, true);               // Byte rate
+    view.setUint16(32, blockAlign, true);             // Block align
+    view.setUint16(34, bitsPerSample, true);          // Bits per sample
+    
+    // Write the data chunk
+    writeString(view, 36, 'data');                    // Data chunk identifier
+    view.setUint32(40, dataSize, true);               // Data chunk length
+    
+    // Write interleaved audio data
+    const offset = 44;
+    const channels = [];
+    for (let i = 0; i < numChannels; i++) {
+        channels.push(buffer.getChannelData(i));
+    }
+    
+    let sample = 0;
+    let sampleOffset;
+    
+    for (let i = 0; i < buffer.length; i++) {
+        for (let channel = 0; channel < numChannels; channel++) {
+            // Clamp the sample values to -1.0..1.0
+            sample = Math.max(-1, Math.min(1, channels[channel][i]));
+            // Convert to 16-bit value
+            sample = sample < 0 ? sample * 0x8000 : sample * 0x7FFF;
+            // Calculate sample byte offset
+            sampleOffset = offset + ((i * numChannels + channel) * bytesPerSample);
+            // Write 16-bit sample values
+            view.setInt16(sampleOffset, sample, true);
+        }
+    }
+    
+    // Create WAV blob
+    return new Blob([view], { type: 'audio/wav' });
 }
 
 // Pitch shifting function
@@ -184,67 +279,6 @@ function pitchShift(input, output, outputChannel, semitones, context) {
     
     // Connect output
     gainNode.connect(output, 0, outputChannel);
-}
-
-// Convert AudioBuffer to WAV
-function audioBufferToWav(buffer) {
-    const numChannels = buffer.numberOfChannels;
-    const length = buffer.length * numChannels;
-    const sampleRate = buffer.sampleRate;
-    const bitsPerSample = 16; 
-    const bytesPerSample = bitsPerSample / 8;
-    const blockAlign = numChannels * bytesPerSample;
-    const byteRate = sampleRate * blockAlign;
-    const dataSize = length * bytesPerSample;
-    
-    // Create the buffer for the WAV file
-    const arrayBuffer = new ArrayBuffer(44 + dataSize);
-    const view = new DataView(arrayBuffer);
-    
-    // Write the WAV container header
-    writeString(view, 0, 'RIFF');                     // RIFF identifier
-    view.setUint32(4, 36 + dataSize, true);           // File length
-    writeString(view, 8, 'WAVE');                     // WAVE identifier
-    
-    // Write the format chunk
-    writeString(view, 12, 'fmt ');                    // Format chunk identifier
-    view.setUint32(16, 16, true);                     // Format chunk length
-    view.setUint16(20, 1, true);                      // Sample format (1 for PCM)
-    view.setUint16(22, numChannels, true);            // Number of channels
-    view.setUint32(24, sampleRate, true);             // Sample rate
-    view.setUint32(28, byteRate, true);               // Byte rate (SampleRate * NumChannels * BitsPerSample/8)
-    view.setUint16(32, blockAlign, true);             // Block align (NumChannels * BitsPerSample/8)
-    view.setUint16(34, bitsPerSample, true);          // Bits per sample
-    
-    // Write the data chunk
-    writeString(view, 36, 'data');                    // Data chunk identifier
-    view.setUint32(40, dataSize, true);               // Data chunk length
-    
-    // Write interleaved audio data
-    const offset = 44;
-    const channels = [];
-    for (let i = 0; i < numChannels; i++) {
-        channels.push(buffer.getChannelData(i));
-    }
-    
-    let sample = 0;
-    let sampleOffset;
-    
-    for (let i = 0; i < buffer.length; i++) {
-        for (let channel = 0; channel < numChannels; channel++) {
-            // Clamp the sample values to -1.0..1.0
-            sample = Math.max(-1, Math.min(1, channels[channel][i]));
-            // Convert to 16-bit value
-            sample = sample < 0 ? sample * 0x8000 : sample * 0x7FFF;
-            // Calculate sample byte offset
-            sampleOffset = offset + ((i * numChannels + channel) * bytesPerSample);
-            // Write 16-bit sample values
-            view.setInt16(sampleOffset, sample, true);
-        }
-    }
-    
-    // Create the WAV file as a blob
-    return new Blob([view], { type: 'audio/wav' });
 }
 
 // Helper function to write strings to DataView
